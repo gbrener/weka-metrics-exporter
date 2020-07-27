@@ -206,8 +206,14 @@ class wekaCollector():
     populate_stats_gauge = Gauge('weka_prometheus_populate_stats_seconds', 'Time spent populating stats')
 
     def __init__( self, hostname, autohost, verbose, configfile ):
-        self.host = cycleIterator( [hostname] )
-        self.servers = cycleIterator( [hostname] )
+        hostnames = hostname.split(',') if ',' in hostname else [hostname]
+        # when load-balancing is disabled, only use the first hostname
+        if len(hostnames) > 1 and not autohost:
+            syslog.syslog( syslog.LOG_WARNING, "wekaCollector.__init__(): Multiple hostnames were provided, but --autohost was not enabled. Choosing first hostname" )
+            hostnames = [hostnames[0]]
+
+        self.host = cycleIterator( hostnames.copy() )
+        self.servers = cycleIterator( hostnames.copy() )
         self.loadbalance = autohost
         self.verbose = verbose
 
@@ -331,7 +337,7 @@ class wekaCollector():
         thread_runner.run()     # kick off threads; wait for them to complete
 
         # reset threading to load balance, if we want to
-        if self.loadbalance:
+        if self.loadbalance and len(self.host.list) == 1:
             serverlist = []
             try:
                 for host in self.wekadata["backendHostList"]:
@@ -607,7 +613,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Prometheus Client for Weka clusters")
     parser.add_argument("-c", "--configfile", dest='configfile', default="./weka-metrics-exporter.yml", help="override ./weka-metrics-exporter.yml as config file")
     parser.add_argument("-p", "--port", dest='port', default="8001", help="TCP port number to listen on")
-    parser.add_argument("-H", "--HOST", dest='wekahost', default="localhost", help="Specify the Weka host (hostname/ip) to collect stats from")
+    parser.add_argument("-H", "--HOST", dest='wekahost', default="localhost", help="Specify the Weka host (hostname/ip) to collect stats from. When '-a' option is provided, can provide multiple hostnames/ips (separated by commas)")
     parser.add_argument("-a", "--autohost", dest='autohost', default=False, action="store_true", help="Automatically load balance queries over backend hosts" )
     parser.add_argument("-v", "--verbose", dest='verbose', default=False, action="store_true", help="Enable verbose output" )
     args = parser.parse_args()
